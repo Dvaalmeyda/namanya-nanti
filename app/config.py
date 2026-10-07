@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     EMBED_DOC_PREFIX: str = ""
     EMBED_BATCH: int = 16
 
+    # Loader settings
+    PDF_BACKEND: str = "pymupdf"
+    OCR_MIN_CHARS: int = 50
+    MAX_FILE_MB: int = 50
+    XLSX_ROW_CHUNK: int = 30
+
     # Paths
     DOCS_DIR: Path = Path("data/docs")
     SAMPLE_DIR: Path = Path("data/sample")
