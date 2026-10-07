@@ -56,7 +56,7 @@ def format_location(block: Block) -> str:
         parts.append(f"sheet: {block.sheet}")
     if block.page is not None:
         parts.append(f"hal. {block.page}")
-    if block.section:
+    if block.section and (not block.sheet or block.section != f"Sheet: {block.sheet}"):
         parts.append(block.section)
     return f"[{' | '.join(parts)}]"
 
@@ -243,13 +243,17 @@ def extract_pdf(path: Path, meta: dict[str, Any], settings: Settings) -> list[Bl
                 is_heading = False
                 if len(lines) == 1 and len(clean_text) < 90:
                     first_line = lines[0]
-                    if not first_line.endswith((".", ";", ":")) and (
-                        first_line.isupper()
-                        or first_line.startswith(("Bab ", "BAB ", "Pasal ", "PASAL ", "Tabel ", "TABEL "))
-                        or first_line.istitle()
-                    ):
-                        is_heading = True
-                        current_section = first_line
+                    has_colon = ":" in first_line
+                    is_numbered_section = bool(
+                        re.match(r"^(bab|pasal|bagian|lampiran|tabel|\d+\.|\d+\.\d+)\b", first_line, re.IGNORECASE)
+                    )
+                    if not first_line.endswith((".", ";", ":")):
+                        if is_numbered_section:
+                            is_heading = True
+                            current_section = first_line
+                        elif not has_colon and (first_line.isupper() and len(first_line) > 3):
+                            is_heading = True
+                            current_section = first_line
 
                 page_items.append(
                     {
@@ -544,30 +548,34 @@ def extract_md(path: Path, meta: dict[str, Any], settings: Settings) -> list[Blo
         if not clean:
             continue
 
-        # Cek jika blok adalah heading markdown (# Heading)
+        # Cek jika blok diawali heading markdown (# Heading)
         if clean.startswith("#"):
-            first_line = clean.splitlines()[0]
+            lines = clean.splitlines()
+            first_line = lines[0].strip()
             heading_match = re.match(r"^(#{1,6})\s+(.+)$", first_line)
             if heading_match:
                 current_section = heading_match.group(2).strip()
-                # Jika seluruh blok hanya baris heading
-                if len(clean.splitlines()) == 1:
-                    blocks.append(
-                        Block(
-                            rel_path=meta["rel_path"],
-                            file_hash=meta["file_hash"],
-                            filename=meta["filename"],
-                            file_type=meta["file_type"],
-                            folder=meta["folder"],
-                            modified_at=meta["modified_at"],
-                            page=None,
-                            sheet=None,
-                            section=current_section,
-                            kind="heading",
-                            text=clean,
-                        )
+                # Tambahkan heading sebagai blok tersendiri
+                blocks.append(
+                    Block(
+                        rel_path=meta["rel_path"],
+                        file_hash=meta["file_hash"],
+                        filename=meta["filename"],
+                        file_type=meta["file_type"],
+                        folder=meta["folder"],
+                        modified_at=meta["modified_at"],
+                        page=None,
+                        sheet=None,
+                        section=current_section,
+                        kind="heading",
+                        text=first_line,
                     )
+                )
+
+                remaining = "\n".join(lines[1:]).strip()
+                if not remaining:
                     continue
+                clean = remaining
 
         # Cek tabel markdown (| a | b |)
         if clean.startswith("|") and "\n|" in clean:
@@ -711,11 +719,13 @@ def load_documents(
             if blocks:
                 all_blocks.extend(blocks)
                 loaded_files.append(rel_path)
+            elif file_path.stat().st_size == 0:
+                logger.info(f"File berukuran 0 byte (kosong): {rel_path}")
             else:
-                # File mungkin kosong atau gagal diekstrak
-                logger.warning(f"Tidak ada blok yang diekstrak dari {rel_path}")
+                failed_files.append(rel_path)
+                logger.warning(f"Tidak ada blok yang berhasil diekstrak dari {rel_path}")
         except Exception as exc:
-            failed_files.append(file_path.name)
+            failed_files.append(rel_path if "rel_path" in locals() else file_path.name)
             logger.error(f"Kesalahan tak terduga pada {file_path.name}: {exc}")
 
     # Rekapitulasi statistik
