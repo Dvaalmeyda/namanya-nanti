@@ -39,13 +39,18 @@ def create_pdf(path: Path) -> None:
     # Halaman 2: Tabel Rincian Manfaat
     page2 = doc.new_page()
     html_page2 = """
+    <style>
+        table { border-collapse: collapse; width: 100%; border: 1px solid #cbd5e0; }
+        th, td { border: 1px solid #cbd5e0; padding: 6px; font-size: 10pt; }
+        th { background-color: #edf2f7; font-weight: bold; }
+    </style>
     <div style="font-family: sans-serif; font-size: 10pt; line-height: 1.4;">
         <h2 style="color: #1a365d; font-size: 14pt;">Tabel Rincian Manfaat Rawat Inap</h2>
-        <table border="1" style="border-collapse: collapse; width: 100%; border-color: #cbd5e0;">
-            <tr style="background-color: #edf2f7; font-weight: bold;">
-                <td style="padding: 6px;">Jenis Manfaat</td>
-                <td style="padding: 6px;">Limit Maksimal</td>
-                <td style="padding: 6px;">Ketentuan Khusus</td>
+        <table>
+            <tr>
+                <th>Jenis Manfaat</th>
+                <th>Limit Maksimal</th>
+                <th>Ketentuan Khusus</th>
             </tr>
             <tr>
                 <td style="padding: 6px;">Kamar Rawat Inap & ICU</td>
