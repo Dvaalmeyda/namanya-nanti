@@ -14,11 +14,26 @@ Asisten AI tanya-jawab atas dokumen pribadi (polis asuransi, kontrak sewa, angga
 3. **Ollama**:
    Pastikan aplikasi Ollama terinstal dan service-nya aktif di latar belakang (`http://127.0.0.1:11434`).
 
-### Rekomendasi Variabel Lingkungan Server Ollama (Laptop 16 GB RAM)
-Tambahkan variabel berikut pada PowerShell sebelum menjalankan server Ollama untuk efisiensi RAM/VRAM:
+### Konfigurasi Penting Server Ollama (Laptop GPU MX450 2 GB & CPU 16 GB RAM)
+GPU NVIDIA GeForce MX450 (2 GB VRAM) tidak mendukung fitur 16-bit storage Vulkan yang dibutuhkan Ollama, sehingga menyebabkan error `llama-server process has terminated: exit status 0xe06d7363`.
+
+Oleh karena itu, server Ollama wajib dijalankan dalam **mode CPU murni (AVX-512 Tiger Lake)**.
+Jalankan perintah ini di PowerShell sekali untuk mendaftarkan variabel secara permanen di akun Windows Anda:
 ```powershell
+[Environment]::SetEnvironmentVariable("OLLAMA_VULKAN", "0", "User")
+[Environment]::SetEnvironmentVariable("CUDA_VISIBLE_DEVICES", "-1", "User")
+[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL", "1", "User")
+[Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "2", "User")
+```
+Setelah itu, restart aplikasi Ollama dari Start Menu atau System Tray Windows.
+
+Atau jika menjalankan Ollama via terminal PowerShell:
+```powershell
+$env:OLLAMA_VULKAN = "0"
+$env:CUDA_VISIBLE_DEVICES = "-1"
 $env:OLLAMA_NUM_PARALLEL = "1"
 $env:OLLAMA_MAX_LOADED_MODELS = "2"
+ollama serve
 ```
 
 ---

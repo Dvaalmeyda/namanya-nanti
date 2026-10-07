@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Ollama settings
     OLLAMA_HOST: str = "http://127.0.0.1:11434"
-    OLLAMA_TIMEOUT_S: int = 120
+    OLLAMA_TIMEOUT_S: int = 300
     KEEP_ALIVE: str = "30m"
     NUM_THREAD: Optional[int] = None
 
