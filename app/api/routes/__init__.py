@@ -1,0 +1,1 @@
+"""Rute endpoint API."""

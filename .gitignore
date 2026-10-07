@@ -47,3 +47,17 @@ htmlcov/
 
 # Logs
 *.log
+
+# Project Specific Data & Indexes
+data/docs/
+data/index/
+data/private/
+
+# Evaluation reports & private golden set
+eval/reports/
+eval/*.private.*
+
+# Environment overrides
+.env
+.env.*
+!.env.example

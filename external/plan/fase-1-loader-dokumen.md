@@ -1,35 +1,56 @@
 # FASE 1 - Loader dan normalisasi dokumen
 
 > Prasyarat: Fase 0 selesai.
-
-## KONTEKS PROYEK (selalu tempel di awal sesi)
-- Proyek: asisten AI tanya-jawab atas dokumen internal perusahaan yang SANGAT RAHASIA. Semuanya berjalan lokal.
-- Larangan mutlak: tidak ada panggilan ke layanan eksternal (API LLM cloud, telemetry, tracing cloud, CDN, font atau skrip eksternal). Hanya localhost.
-- Lingkungan awal: laptop Windows 11 (PowerShell), CPU-only (i7-1165G7, RAM 16 GB; GPU MX450 2 GB tidak dipakai). Kelak dipindah ke server dengan GPU, jadi semua pengaturan lewat config/.env; tidak ada path atau nama model yang di-hardcode.
-- Stack terkunci: Python 3.11+ dengan uv, Ollama (LLM `qwen3:4b-instruct`, embedding `bge-m3`), Qdrant mode lokal (tanpa server), SQLite FTS5 untuk BM25, FastAPI. Dokumen berbahasa Indonesia (sebagian Inggris).
-- Data: dokumen asli TIDAK boleh masuk repo. Pengembangan dan tes hanya memakai dokumen dummy di `data/sample/`. Jangan pernah mencatat isi dokumen atau isi pertanyaan di log.
-- Cara kerja: tulis rencana singkat dulu, lalu implementasi, tes, dan jalankan. Jangan menambah dependensi tanpa alasan tertulis. Jelaskan keputusan penting dalam 1-2 kalimat. Kerjakan HANYA fase ini; berhenti dan lapor setelah selesai.
+> Baca `00-KONTEKS.md` terlebih dahulu.
 
 ## TUGAS
 Bangun `app/loaders.py` yang membaca dokumen dan menghasilkan `Block` ternormalisasi.
 
-Skema dataclass `Block`: `doc_id` (sha256 isi file), `filename`, `rel_path`, `page` (1-based; nomor sheet untuk XLSX), `section` (jalur heading atau nama sheet), `kind` (heading | paragraph | table | list), `text`, `allowed_roles` (list[str]), `sensitivity` (str), `needs_ocr` (bool).
+### Skema dataclass `Block`
+| Field | Tipe | Keterangan |
+|---|---|---|
+| `rel_path` | str | Path relatif terhadap root dokumen, pemisah `/`. **Kunci identitas dokumen.** |
+| `file_hash` | str | sha256 isi file (untuk deteksi perubahan, bukan identitas) |
+| `filename` | str | Nama file |
+| `file_type` | str | `pdf` / `docx` / `xlsx` / `md` / `txt` |
+| `folder` | str | Folder tingkat pertama di bawah root (kosong bila di root); dipakai sebagai filter |
+| `modified_at` | str | mtime ISO 8601 |
+| `page` | int \| None | Nomor halaman 1-based, **hanya PDF** |
+| `sheet` | str \| None | Nama sheet, **hanya XLSX** |
+| `section` | str | Jalur heading (`Pasal 2 > Pembayaran`) atau nama sheet |
+| `kind` | str | `heading` / `paragraph` / `table` / `list` |
+| `text` | str | Isi blok |
+| `needs_ocr` | bool | True bila halaman PDF tampaknya hasil scan |
 
-1. Format: PDF, DOCX, XLSX, MD, TXT.
-2. Dua backend lewat config `LOADER_BACKEND`:
-   - `ringan` (default): PyMuPDF, python-docx, openpyxl.
-   - `docling` (opsional): hanya jika bisa dipasang bersih di Windows CPU; kalau tidak, tulis di laporan dan lewati.
-3. Tabel dipertahankan sebagai satu Block `kind=table` berformat Markdown dengan baris header. XLSX: satu Block tabel per sheet, dipotong per sekitar 30 baris dengan header diulang di setiap potongan.
-4. PDF hasil scan: bila teks per halaman sangat sedikit, set `needs_ocr=True`, beri peringatan di log, dan JANGAN OCR secara default.
-5. ACL: baca `config/acl.yaml` (aturan `glob`, `allowed_roles`, `sensitivity`); aturan pertama yang cocok dipakai; default `allowed_roles=["admin"]` dan `sensitivity="rahasia"`. Buat contoh `config/acl.yaml`.
-6. Fungsi publik: `scan_dir(root) -> list[Path]` (abaikan file sementara seperti `~$*`), `load_file(path) -> list[Block]`, `file_hash(path)`.
-7. CLI: `python -m app.loaders data/sample --stats` mencetak per file: jumlah blok per kind, jumlah halaman, needs_ocr, waktu proses. Jangan mencetak isi teks kecuali `--preview` (maksimal 200 karakter per blok).
+Fungsi `format_location(block) -> str` menghasilkan label sitasi sesuai tipe: `hlm. 3` (PDF), `sheet "Tabungan"` (XLSX), `bagian "Pasal 2 > Pembayaran"` (DOCX/MD/TXT; kosong bila tanpa heading).
+
+### Langkah
+1. **Format**: PDF, DOCX, XLSX, MD, TXT.
+2. **Backend PDF** lewat config `PDF_BACKEND`:
+   - `pymupdf` (default): teks per halaman + `page.find_tables()`; area tabel tidak boleh terbaca dua kali sebagai paragraf.
+   - `pymupdf4llm` (opsional): keluaran Markdown per halaman. Pasang hanya bila diaktifkan, lalu bandingkan kualitas tabel dan waktu proses dengan default.
+3. **DOCX** (python-docx): iterasi elemen body **sesuai urutan dokumen** (paragraf dan tabel bergantian, lewat `document.element.body`), bukan `doc.paragraphs` lalu `doc.tables` terpisah. Heading dideteksi dari style bawaan Heading 1-9 (cek juga `outline level`, karena nama style bisa terlokalisasi). `page=None`.
+4. **XLSX** (openpyxl): buka dengan `read_only=True, data_only=True`. Lewati baris dan kolom kosong. Tanggal diformat ISO, angka apa adanya. Satu Block `kind=table` per potongan sekitar 30 baris, header diulang di setiap potongan. `sheet` dan `section` berisi nama sheet.
+5. **MD**: pisahkan per heading, `section` berisi jalur heading. **TXT**: per paragraf. Encoding: UTF-8, fallback `cp1252`.
+6. **Tabel** selalu menjadi satu Block `kind=table` berformat Markdown dengan baris header.
+7. **PDF hasil scan**: bila teks per halaman sangat sedikit (ambang di config), set `needs_ocr=True`, catat peringatan di log, dan **jangan** OCR.
+8. **Batas ukuran**: `MAX_FILE_MB` (default 50); file lebih besar dilewati dengan peringatan.
+9. **Fungsi publik**:
+   - `scan_dir(root) -> list[Path]`: rekursif, abaikan file sementara (`~$*`, `.~lock*`), file tersembunyi, dan ekstensi yang tidak didukung.
+   - `load_file(path, root) -> list[Block]`.
+   - `file_hash(path) -> str` (dibaca bertahap, aman untuk file besar).
+10. **CLI**: `python -m app.loaders data/sample --stats` mencetak per file: jumlah blok per kind, jumlah halaman/sheet, `needs_ocr`, waktu proses. Isi teks hanya dicetak dengan `--preview` (maksimal 200 karakter per blok).
 
 ## BATASAN
 - Belum ada chunking, embedding, atau penyimpanan (itu Fase 2).
-- Error pada satu file tidak boleh menghentikan seluruh pemindaian: catat dan lanjut.
+- Error pada satu file tidak boleh menghentikan pemindaian: catat (nama file + jenis error, tanpa isi) dan lanjut.
 - Tidak ada akses jaringan.
 
 ## KRITERIA SELESAI
-- Tes tiap format memakai dokumen di `data/sample/`: tabel PDF tidak tercerai-berai, heading DOCX terbaca di `section`, kedua sheet XLSX terbaca, ACL sesuai aturan.
-- Jika dua backend berjalan, laporkan perbandingan singkat kualitas tabel dan waktu proses.
+- Tes tiap format dengan dokumen di `data/sample/`:
+  - Tabel PDF utuh sebagai satu Block `table` dan tidak terduplikasi sebagai paragraf.
+  - Heading DOCX terbaca di `section`; tabel DOCX muncul di posisi yang benar di antara paragraf.
+  - Kedua sheet XLSX terbaca dengan **nilai angka** (bukan rumus atau `None`).
+  - Dua file kembar (`asuransi/` dan `arsip/`) menghasilkan Block dengan `rel_path` berbeda dan `file_hash` sama.
+  - `format_location` benar untuk setiap tipe.
+- Laporkan waktu proses per file. Bila `pymupdf4llm` dicoba, laporkan perbandingan singkat kualitas tabel dan kecepatan.
