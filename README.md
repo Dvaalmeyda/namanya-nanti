@@ -1,33 +1,182 @@
-# Personal Document Assistant (Lokal & Offline)
+# Personal Document Assistant
 
-Asisten AI tanya-jawab atas dokumen pribadi (polis asuransi, kontrak sewa, anggaran keuangan, catatan servis kendaraan, dsb.) yang berjalan 100% lokal di komputer tanpa ketergantungan internet.
+Aplikasi tanya-jawab atas dokumen pribadi berbasis Retrieval-Augmented Generation (RAG). Pengguna mengunggah atau menempatkan dokumen (PDF, DOCX, XLSX, Markdown, TXT), sistem mengindeksnya, lalu menjawab pertanyaan berdasarkan isi dokumen beserta rujukan sumbernya. Seluruh komponen (model bahasa, model embedding, indeks, API) dijalankan di perangkat pengguna melalui Ollama dan FastAPI.
+
+Versi saat ini: **0.1.0** (lihat [CHANGELOG.md](CHANGELOG.md)).
+
+> Data pada repositori ini adalah **data dummy**. Seluruh dokumen di `data/sample/` dan seluruh pertanyaan di `eval/golden.sample.jsonl` dibuat oleh skrip untuk keperluan pengembangan dan pengujian. Tidak ada dokumen pribadi nyata di dalam repositori.
+
+## Daftar Isi
+
+1. [Overview Sistem](#1-overview-sistem)
+2. [Fungsi Utama dan Fitur](#2-fungsi-utama-dan-fitur)
+3. [Model yang Digunakan](#3-model-yang-digunakan)
+4. [Spesifikasi Perangkat dan Performa](#4-spesifikasi-perangkat-dan-performa)
+5. [Struktur Proyek](#5-struktur-proyek)
+6. [Setup dan Menjalankan Proyek](#6-setup-dan-menjalankan-proyek)
+7. [Penggunaan API](#7-penggunaan-api)
+8. [Data yang Digunakan](#8-data-yang-digunakan)
+9. [Pengujian dan Evaluasi](#9-pengujian-dan-evaluasi)
+10. [Keterbatasan](#10-keterbatasan)
+11. [Rekomendasi Upgrade](#11-rekomendasi-upgrade)
+12. [Dokumentasi Lanjutan](#12-dokumentasi-lanjutan)
 
 ---
 
-## 1. Prasyarat Sistem
+## 1. Overview Sistem
 
-1. **Python 3.11+** (disarankan Python 3.12 atau 3.13)
-2. **uv** (paket manager Python modern dan cepat):
+Sistem terdiri dari empat lapisan:
+
+| Lapisan | Peran | Implementasi |
+|---|---|---|
+| Ingest | Membaca dokumen, memecah menjadi chunk, membuat embedding | `app/loaders.py`, `app/indexing.py` |
+| Penyimpanan | Menyimpan teks, metadata, vektor, dan indeks pencarian kata kunci | SQLite (tabel biasa + FTS5), `app/store.py` |
+| Retrieval dan RAG | Pencarian hybrid, penyaringan relevansi, penyusunan prompt, pemanggilan LLM, pengolahan sitasi | `app/retrieval.py`, `app/rag.py`, `app/prompts.py` |
+| Antarmuka | REST API dengan dokumentasi Swagger UI | FastAPI, `app/api/` |
+
+Alur permintaan tanya-jawab:
+
+```
+Pertanyaan --> embedding query --> pencarian dense (vektor) + BM25 (FTS5)
+           --> penggabungan peringkat (Reciprocal Rank Fusion)
+           --> penyaringan relevansi (jika skor di bawah ambang: ditolak tanpa memanggil LLM)
+           --> penyusunan prompt (konteks dokumen + riwayat percakapan)
+           --> LLM (Ollama) --> jawaban + sitasi [n] + metadata sumber
+```
+
+Penjelasan lebih rinci ada di [docs/architecture.md](docs/architecture.md).
+
+## 2. Fungsi Utama dan Fitur
+
+Fungsi utama: menjawab pertanyaan pengguna berdasarkan isi dokumen yang telah diindeks, disertai rujukan ke dokumen dan lokasi asalnya (halaman, bab, atau sheet).
+
+Fitur yang tersedia pada versi 0.1.0:
+
+- **Format dokumen**: PDF (PyMuPDF), DOCX (python-docx), XLSX (openpyxl, dipecah per kelompok baris), Markdown, dan TXT. PDF hasil pemindaian terdeteksi dan ditandai membutuhkan OCR (OCR belum diimplementasikan).
+- **Pengindeksan inkremental**: perubahan dideteksi lewat hash berkas; dokumen yang tidak berubah tidak diproses ulang. Dokumen kembar (isi sama, path berbeda) berbagi embedding.
+- **Pencarian hybrid**: kombinasi pencarian vektor (dense) dan BM25 melalui Reciprocal Rank Fusion. Mode `dense` dan `bm25` juga dapat dipilih secara terpisah.
+- **Filter metadata**: berdasarkan folder, tipe berkas, atau ID dokumen.
+- **Penyaringan relevansi**: pertanyaan dengan skor kemiripan rendah ditolak dengan pesan standar tanpa memanggil LLM.
+- **Sitasi**: jawaban memuat penanda `[1]`, `[2]`, dan seterusnya yang dipetakan ke metadata sumber.
+- **Riwayat percakapan**: pertanyaan lanjutan memakai beberapa giliran terakhir dari riwayat yang dikirim klien. Server tidak menyimpan sesi.
+- **Perlindungan terhadap prompt injection**: teks dokumen diperlakukan sebagai data dan dibungkus dalam penanda khusus pada prompt.
+- **REST API**: endpoint untuk chat (JSON dan streaming SSE), pencarian, manajemen dokumen, pembaruan indeks di latar belakang, dan health check.
+- **Autentikasi opsional**: header `X-API-Key` jika `API_KEY` diisi.
+- **Kontrol privasi**: koneksi ke host Ollama selain loopback ditolak kecuali `ALLOW_REMOTE=true`; isi dokumen dan pertanyaan tidak dicatat ke log kecuali `LOG_CONTENT=true`.
+- **Modul evaluasi**: golden set, metrik retrieval dan jawaban, sweep parameter, dan runner end-to-end (`eval/`).
+
+## 3. Model yang Digunakan
+
+Semua model dijalankan melalui Ollama.
+
+| Peran | Model | Ukuran unduhan | Keterangan |
+|---|---|---|---|
+| LLM default | `qwen3:4b-instruct` | sekitar 2,5 GB | Mode non-thinking (`LLM_THINK=false`) |
+| LLM pembanding | `qwen2.5:1.5b` | sekitar 1 GB | Dipakai pada evaluasi komparatif |
+| Embedding | `bge-m3` | sekitar 1,2 GB | Multi-bahasa, dipakai untuk dokumen dan query |
+
+Parameter generasi default: `NUM_CTX=4096`, `NUM_PREDICT=384`, `TEMPERATURE=0.1`. Daftar lengkap parameter ada di [docs/configuration.md](docs/configuration.md).
+
+## 4. Spesifikasi Perangkat dan Performa
+
+### Perangkat yang dipakai untuk pengembangan dan pengukuran
+
+| Komponen | Spesifikasi |
+|---|---|
+| CPU | Intel Core i7-1165G7 (4 core, 8 thread) |
+| RAM | 16 GB |
+| GPU | NVIDIA GeForce MX450 (2 GB VRAM), **tidak digunakan** |
+| Sistem operasi | Windows 11 |
+| Mode inferensi | CPU saja (`OLLAMA_VULKAN=0`, `CUDA_VISIBLE_DEVICES=-1`) |
+| Python | 3.11 atau lebih baru (diuji pada 3.13) |
+
+GPU tidak digunakan karena runner Ollama gagal dengan error `llama-server process has terminated: exit status 0xe06d7363` pada konfigurasi GPU tersebut.
+
+### Hasil pengukuran
+
+Pengukuran dilakukan pada 8 Oktober 2026 menggunakan 20 pertanyaan dummy dengan `TOP_K=4`. Angka bersifat spesifik untuk perangkat, model, dan dataset di atas, dan akan berbeda pada kondisi lain.
+
+**Evaluasi end-to-end (RAG lengkap)**
+
+| Metrik | `qwen3:4b-instruct` | `qwen2.5:1.5b` |
+|---|---|---|
+| Pass rate (run 2) | 95% (19/20) | 95% (19/20) |
+| Pass rate (run 3, setelah koreksi golden set) | 100% (20/20) | belum dijalankan ulang |
+| Hit@4 | 100% | 100% |
+| MRR | 1,00 | 1,00 |
+| Kecepatan generasi rata-rata | 5,8 sampai 6,2 token/detik | 6,2 token/detik |
+| Durasi total rata-rata per pertanyaan | 13,8 sampai 14,0 detik | 13,4 detik |
+| Pertanyaan di luar dokumen yang ditolak | 3/3 | 3/3 |
+| Percobaan prompt injection yang tidak membocorkan instruksi | 2/2 | 2/2 |
+
+**Retrieval saja (27 kombinasi parameter, tanpa LLM)**
+
+| Komponen | Latensi |
+|---|---|
+| Embedding query (`bge-m3`) | sekitar 300 sampai 500 ms |
+| Pencarian dense | 0,26 sampai 0,39 ms |
+| Pencarian hybrid (dense + BM25 + RRF) | 0,7 sampai 1,2 ms |
+| Penolakan oleh penyaring relevansi | sekitar 0,4 detik (termasuk embedding query) |
+
+Catatan metodologi, termasuk koreksi golden set dan keterbatasan pengukuran, ada di [docs/evaluation.md](docs/evaluation.md).
+
+## 5. Struktur Proyek
+
+```
+.
+├── app/
+│   ├── api/                  FastAPI: main, deps, jobs (indexing latar belakang), schemas
+│   │   └── routes/           chat, search, documents, index, health
+│   ├── config.py             Pengaturan terpusat (pydantic-settings, membaca .env)
+│   ├── loaders.py            Ekstraksi teks per format dan pemindaian direktori
+│   ├── indexing.py           Chunking, embedding, sinkronisasi indeks inkremental
+│   ├── store.py              Skema SQLite, FTS5, penyimpanan vektor
+│   ├── retrieval.py          Pencarian hybrid, filter, deduplikasi, penyaring relevansi
+│   ├── rag.py                Orkestrasi RAG, sitasi, streaming
+│   ├── prompts.py            Template prompt sistem dan konteks
+│   ├── ollama_client.py      Klien Ollama (embed, chat, penanganan error)
+│   ├── privacy.py            Pembatasan koneksi ke host lokal
+│   ├── logging_setup.py      Logging dengan penyamaran konten
+│   └── cli_chat.py           Antarmuka baris perintah sederhana
+├── data/
+│   ├── sample/               Dokumen dummy (dibuat oleh skrip, ikut repositori)
+│   ├── docs/                 Dokumen pengguna (diabaikan git)
+│   └── index/                Basis data indeks (diabaikan git)
+├── eval/                     Golden set, metrik, sweep, runner, laporan
+├── scripts/                  make_sample_docs, check_env, test_llm, demo
+├── tests/                    Pengujian unit dan integrasi (pytest)
+├── docs/                     Dokumentasi rinci
+├── external/plan/            Dokumen perencanaan per fase
+├── .env.example              Contoh konfigurasi
+├── CHANGELOG.md
+└── pyproject.toml
+```
+
+## 6. Setup dan Menjalankan Proyek
+
+### 6.1 Prasyarat
+
+1. Python 3.11 atau lebih baru.
+2. [uv](https://docs.astral.sh/uv/):
    ```powershell
    winget install astral-sh.uv
    ```
-3. **Ollama**:
-   Pastikan aplikasi Ollama terinstal dan service-nya aktif di latar belakang (`http://127.0.0.1:11434`).
+3. [Ollama](https://ollama.com/) terpasang dan berjalan di `http://127.0.0.1:11434`.
+4. Ruang disk sekitar 4 GB untuk model dan RAM minimal 16 GB disarankan.
 
-### Konfigurasi Penting Server Ollama (Laptop GPU MX450 2 GB & CPU 16 GB RAM)
-GPU NVIDIA GeForce MX450 (2 GB VRAM) tidak mendukung fitur 16-bit storage Vulkan yang dibutuhkan Ollama, sehingga menyebabkan error `llama-server process has terminated: exit status 0xe06d7363`.
+### 6.2 Konfigurasi Ollama untuk mode CPU
 
-Oleh karena itu, server Ollama wajib dijalankan dalam **mode CPU murni (AVX-512 Tiger Lake)**.
-Jalankan perintah ini di PowerShell sekali untuk mendaftarkan variabel secara permanen di akun Windows Anda:
+Langkah ini hanya diperlukan jika inferensi GPU gagal atau tidak diinginkan, seperti pada perangkat pengembangan. Atur variabel lingkungan satu kali, lalu restart Ollama:
+
 ```powershell
 [Environment]::SetEnvironmentVariable("OLLAMA_VULKAN", "0", "User")
 [Environment]::SetEnvironmentVariable("CUDA_VISIBLE_DEVICES", "-1", "User")
 [Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL", "1", "User")
 [Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "2", "User")
 ```
-Setelah itu, restart aplikasi Ollama dari Start Menu atau System Tray Windows.
 
-Atau jika menjalankan Ollama via terminal PowerShell:
+Alternatif untuk satu sesi terminal:
+
 ```powershell
 $env:OLLAMA_VULKAN = "0"
 $env:CUDA_VISIBLE_DEVICES = "-1"
@@ -36,133 +185,165 @@ $env:OLLAMA_MAX_LOADED_MODELS = "2"
 ollama serve
 ```
 
----
+### 6.3 Instalasi
 
-## 2. Langkah Setup Proyek
-
-### a. Sinkronisasi Dependensi
-Jalankan perintah berikut di root folder proyek:
 ```powershell
 uv sync
-```
-
-### b. Konfigurasi Environment
-Salin template konfigurasi:
-```powershell
 Copy-Item .env.example .env
-```
-Anda dapat menyesuaikan nama model atau path di dalam file `.env` jika diperlukan.
-
-### c. Unduh Model di Ollama
-Unduh model embedding dan model LLM baseline:
-```powershell
 ollama pull bge-m3
 ollama pull qwen3:4b-instruct
 ```
 
----
+Model pembanding (opsional): `ollama pull qwen2.5:1.5b`.
 
-## 3. Eksekusi Script Utilitas & Pengujian
+### 6.4 Menyiapkan dokumen
 
-### a. Membuat Dokumen Uji Dummy (Sample)
-Menghasilkan 6 file dummy berbahasa Indonesia di folder `data/sample/`:
+Dokumen dummy:
+
 ```powershell
 uv run python scripts/make_sample_docs.py
 ```
 
-### b. Memeriksa Lingkungan & Benchmark Kecepatan
-Mengukur ketersediaan model, kecepatan prefill, kecepatan generate token/detik, alokasi VRAM GPU MX450, serta komparasi CPU thread:
-```powershell
-uv run python scripts/check_env.py
-```
+Perintah ini membuat enam berkas di `data/sample/`. Untuk dokumen sendiri, letakkan berkas di `data/docs/` (dapat berupa subfolder) atau unggah lewat API.
 
-Opsi pengujian lanjutan:
-```powershell
-# Membandingkan thread 4 vs 8
-uv run python scripts/check_env.py --num-thread 4 8
+### 6.5 Membangun indeks
 
-# Membandingkan beberapa model LLM (jika sudah di-pull)
-uv run python scripts/check_env.py --models qwen3:4b-instruct qwen3.5:4b
-```
+Indeks dapat dibangun lewat API (`POST /api/v1/index/update`) setelah server berjalan, atau saat dokumen diunggah. Status dipantau melalui `GET /api/v1/index/status`.
 
-### c. Menguji Mode CPU-Only (Membandingkan GPU vs CPU)
-Untuk mengukur benchmark tanpa menggunakan GPU NVIDIA MX450:
-1. Hentikan service Ollama di tray Windows.
-2. Jalankan Ollama di PowerShell dengan flag CUDA dinonaktifkan:
-   ```powershell
-   $env:CUDA_VISIBLE_DEVICES = "-1"
-   ollama serve
-   ```
-3. Di terminal PowerShell lain, jalankan kembali:
-   ```powershell
-   uv run python scripts/check_env.py
-   ```
-
-### d. Menjalankan Tes Unit (Keamanan Socket Terisolasi)
-Pengujian otomatis menggunakan `pytest` dengan proteksi `pytest-socket` (koneksi luar diblokir, hanya loopback yang diizinkan):
-```powershell
-uv run pytest
-```
-
----
-
-## 4. Menjalankan REST API (FastAPI + Swagger UI)
-
-API asisten dokumen berjalan secara lokal di loopback `127.0.0.1:8000` dengan 1 worker:
+### 6.6 Menjalankan API
 
 ```powershell
 uv run uvicorn app.api.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-### Akses Antarmuka Interaktif
-Buka peramban (browser) dan akses:
-- **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+Gunakan satu worker karena status indexing dan antrean chat disimpan di memori proses.
 
----
+- Swagger UI: http://127.0.0.1:8000/docs
+- ReDoc: http://127.0.0.1:8000/redoc
 
-## 5. Panduan Pengujian Melalui Swagger UI
+### 6.7 Memeriksa lingkungan
 
-Setiap endpoint telah dilengkapi skema Pydantic dan contoh request yang terisi otomatis (*Try it out*):
+```powershell
+uv run python scripts/check_env.py
+uv run python scripts/check_env.py --num-thread 4 8
+uv run python scripts/check_env.py --models qwen3:4b-instruct qwen2.5:1.5b
+```
 
-1. **Pemeriksaan Kesehatan (`GET /api/v1/health`)**
-   - Klik **Try it out** -> **Execute**.
-   - Menampilkan status Ollama, model yang terpasang/termuat di RAM/VRAM, jumlah dokumen, dan versi indeks.
-2. **Unggah Dokumen Baru (`POST /api/v1/documents`)**
-   - Pilih berkas (`.pdf`, `.docx`, `.xlsx`, `.md`, atau `.txt`) dan tentukan subfolder (opsional).
-   - Server mengembalikan `202 Accepted` beserta `job_id`, dan otomatis menjadwalkan sinkronisasi indeks di latar belakang.
-3. **Pantau Progres Sinkronisasi (`GET /api/v1/index/status`)**
-   - Menampilkan persentase kemajuan, berkas yang sedang diproses, dan estimasi waktu selesai (ETA).
-4. **Pencarian Dokumen Saja (`POST /api/v1/search`)**
-   - Menguji retrieval tanpa memanggil LLM (pilihan mode: `hybrid`, `dense`, `bm25`).
-   - Menghasilkan daftar potongan teks (maksimal 200 karakter) beserta skor kemiripan.
-5. **Tanya-Jawab RAG Lengkap (`POST /api/v1/chat`)**
-   - Masukkan pertanyaan (misalnya: *"Berapa total biaya sewa rumah?"*).
-   - Menghasilkan jawaban terstruktur dengan sitasi nomor `[1]`, `[2]`, metadata sumber rujukan, dan profil latensi.
+Skrip ini memeriksa ketersediaan model serta mengukur kecepatan prefill dan generasi.
 
----
+## 7. Penggunaan API
 
-## 6. Contoh Kueri via Baris Perintah (`curl`)
+Semua endpoint berada di bawah prefiks `/api/v1`.
 
-### a. Tanya-Jawab Format JSON (`POST /api/v1/chat`)
+| Method | Path | Fungsi |
+|---|---|---|
+| GET | `/health` | Status Ollama, model, jumlah dokumen, versi indeks |
+| POST | `/chat` | Tanya-jawab, respons JSON |
+| POST | `/chat/stream` | Tanya-jawab, respons streaming (SSE) |
+| POST | `/search` | Retrieval tanpa LLM (`hybrid`, `dense`, `bm25`) |
+| GET | `/documents` | Daftar dokumen terindeks |
+| GET | `/documents/{doc_id}` | Detail satu dokumen |
+| POST | `/documents` | Unggah dokumen dan jadwalkan indexing |
+| DELETE | `/documents/{doc_id}` | Hapus dokumen |
+| GET | `/chunks/{chunk_id}` | Isi lengkap satu chunk |
+| POST | `/index/update` | Sinkronisasi indeks di latar belakang |
+| GET | `/index/status` | Progres sinkronisasi |
+
+Contoh permintaan:
+
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/api/v1/chat" `
   -H "Content-Type: application/json" `
-  -d '{"question": "Berapa biaya sewa rumah dan durasinya?", "top_k": 3}'
+  -d '{\"question\": \"Berapa biaya sewa rumah dan durasinya?\", \"top_k\": 3}'
 ```
 
-### b. Streaming Real-Time SSE (`POST /api/v1/chat/stream`)
+Streaming:
+
 ```powershell
 curl.exe -N -X POST "http://127.0.0.1:8000/api/v1/chat/stream" `
   -H "Content-Type: application/json" `
-  -d '{"question": "Sebutkan rincian suku cadang servis 20.000 km mobil HR-V"}'
+  -d '{\"question\": \"Sebutkan rincian suku cadang servis 20.000 km mobil HR-V\"}'
 ```
 
-### c. Autentikasi API Key (Jika `API_KEY` Diisi di `.env`)
-Bila parameter `API_KEY` dikonfigurasi, sertakan header `X-API-Key`:
+Jika `API_KEY` diisi pada `.env`, sertakan header `X-API-Key`. Di Swagger UI, gunakan tombol **Authorize**.
+
+Skema request dan response lengkap tersedia di Swagger UI dan diringkas pada [docs/api.md](docs/api.md).
+
+## 8. Data yang Digunakan
+
+Seluruh data pada repositori adalah **dummy** dan fiktif.
+
+| Berkas dummy | Isi |
+|---|---|
+| `data/sample/rumah/kontrak-sewa.docx` | Perjanjian sewa rumah |
+| `data/sample/arsip/polis-kesehatan.pdf` | Polis asuransi kesehatan (salinan kembar di `asuransi/`, untuk menguji deduplikasi) |
+| `data/sample/keuangan/anggaran-rumah-tangga.xlsx` | Anggaran dan tabungan, beberapa sheet |
+| `data/sample/kendaraan/catatan-servis.md` | Riwayat servis kendaraan |
+| `data/sample/unduhan/artikel-tips.txt` | Artikel tips keuangan |
+
+Pembuatan berkas dilakukan oleh `scripts/make_sample_docs.py`. Nama, alamat, nominal, dan kode pada berkas tersebut bukan data nyata.
+
+Dokumen pribadi pengguna disimpan di `data/docs/`, sedangkan indeks di `data/index/`. Keduanya, bersama `.env`, `eval/reports/`, dan `eval/*.private.*`, dikecualikan dari git melalui `.gitignore`.
+
+## 9. Pengujian dan Evaluasi
+
+Pengujian otomatis:
+
 ```powershell
-curl.exe -X GET "http://127.0.0.1:8000/api/v1/documents" `
-  -H "X-API-Key: kunci-rahasia-anda"
+uv run pytest
 ```
-Di Swagger UI, klik tombol hijau **Authorize** di kanan atas dan masukkan API key Anda.
 
+Saat ini terdapat 60 pengujian. `pytest-socket` memblokir koneksi keluar selama pengujian; hanya loopback yang diizinkan.
+
+Evaluasi kualitas:
+
+```powershell
+# Sweep parameter retrieval (tanpa LLM)
+uv run python -m eval.sweep --golden eval/golden.sample.jsonl
+
+# Evaluasi end-to-end untuk satu atau lebih model
+uv run python -m eval.run --golden eval/golden.sample.jsonl --models qwen3:4b-instruct qwen2.5:1.5b --k 4 --show-failures
+```
+
+Laporan ditulis ke `eval/reports/` dalam format Markdown dan CSV. Panduan membuat golden set untuk dokumen pribadi ada di [eval/README.md](eval/README.md).
+
+## 10. Keterbatasan
+
+- Golden set hanya berisi 20 pertanyaan dengan 6 dokumen dummy. Hasil evaluasi menunjukkan perilaku pada data tersebut dan tidak dapat digeneralisasi ke koleksi dokumen yang lebih besar atau lebih beragam.
+- Pertanyaan evaluasi dibuat oleh pengembang sistem, sehingga hasil retrieval 100% pada dataset ini tidak berarti retrieval akan sama pada data lain.
+- Nilai TTFT pada laporan evaluasi tercatat 0 ms karena belum diambil dari metrik Ollama; hanya kecepatan generasi dan durasi total yang dapat diandalkan.
+- Penilaian jawaban memakai pencocokan kata kunci, bukan penilaian semantik.
+- OCR belum tersedia; PDF hasil pemindaian hanya ditandai.
+- Memori percakapan disimpan di sisi klien; server tidak menyimpan sesi.
+- Satu worker dan satu permintaan chat bersamaan (`MAX_CONCURRENT_CHAT=1`).
+- Nilai default ambang penyaring relevansi (`MIN_DENSE_SCORE=0.35`, `MIN_BM25_SCORE=0.0`) berbeda dari nilai yang menghasilkan akurasi penolakan tertinggi pada sweep (0,45 dan 1,0). Lihat [docs/evaluation.md](docs/evaluation.md).
+- Pengujian hanya dilakukan di Windows 11 dengan satu konfigurasi perangkat.
+
+## 11. Rekomendasi Upgrade
+
+Ringkasan; rincian dan alasan ada di [docs/upgrade-recommendations.md](docs/upgrade-recommendations.md).
+
+| Prioritas | Usulan |
+|---|---|
+| Tinggi | Perluas golden set dan gunakan dokumen nyata melalui `eval/golden.private.jsonl` |
+| Tinggi | Tinjau nilai default ambang relevansi berdasarkan hasil sweep |
+| Tinggi | Catat TTFT dari metrik prefill Ollama pada runner evaluasi |
+| Sedang | Tambahkan OCR untuk PDF pindaian |
+| Sedang | Uji model LLM lain dan model embedding alternatif pada koleksi yang lebih besar |
+| Sedang | Aktifkan query rewrite secara selektif untuk pertanyaan lanjutan |
+| Sedang | Tambahkan reranker pada hasil retrieval |
+| Rendah | Antarmuka web sederhana di atas API |
+| Rendah | Penyimpanan sesi percakapan di sisi server |
+| Rendah | Dukungan GPU atau perangkat dengan VRAM lebih besar untuk model yang lebih besar |
+
+## 12. Dokumentasi Lanjutan
+
+| Dokumen | Isi |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Arsitektur, alur data, skema penyimpanan, keputusan desain |
+| [docs/configuration.md](docs/configuration.md) | Seluruh parameter `.env` |
+| [docs/api.md](docs/api.md) | Ringkasan endpoint dan format respons |
+| [docs/evaluation.md](docs/evaluation.md) | Metodologi dan hasil evaluasi |
+| [docs/upgrade-recommendations.md](docs/upgrade-recommendations.md) | Rekomendasi pengembangan lanjutan |
+| [eval/README.md](eval/README.md) | Panduan menjalankan evaluasi |
+| [CHANGELOG.md](CHANGELOG.md) | Riwayat perubahan dan versi |
