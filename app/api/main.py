@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manajer siklus hidup aplikasi (startup dan shutdown)."""
-    settings = get_settings()
+    settings = getattr(app.state, "settings", None) or get_settings()
 
     # 1. Terapkan flag lingkungan offline dan pastikan host lokal
     apply_offline_env()
@@ -84,6 +84,7 @@ def create_app(settings: Settings = None) -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+    app.state.settings = app_settings
 
     # ==========================================================================
     # Middleware Logging Permintaan
