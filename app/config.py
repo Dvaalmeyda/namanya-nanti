@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     MAX_FILE_MB: int = 50
     XLSX_ROW_CHUNK: int = 30
 
+    # Indexing & Storage settings
+    CHUNK_SIZE: int = 800
+    CHUNK_OVERLAP: int = 100
+    VECTOR_DTYPE: str = "float32"
+    STEMMER: str = "none"
+
     # Paths
     DOCS_DIR: Path = Path("data/docs")
     SAMPLE_DIR: Path = Path("data/sample")
