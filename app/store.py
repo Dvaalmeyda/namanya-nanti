@@ -292,8 +292,11 @@ def bm25_search(
     k: int = 5,
     folder: Optional[str] = None,
     file_type: Optional[str] = None,
+    folders: Optional[Any] = None,
+    file_types: Optional[Any] = None,
+    doc_ids: Optional[Any] = None,
 ) -> list[tuple[int, float]]:
-    """Mencari chunk menggunakan BM25 pada tabel chunks_fts."""
+    """Mencari chunk menggunakan BM25 pada tabel chunks_fts dengan dukungan filter."""
     fts_query = build_fts_query(query_text)
     if not fts_query:
         return []
@@ -307,12 +310,26 @@ def bm25_search(
     """
     params: list[Any] = [fts_query]
 
-    if folder:
-        sql += " AND d.folder = ?"
-        params.append(folder)
-    if file_type:
-        sql += " AND d.file_type = ?"
-        params.append(file_type.lower())
+    # Normalisasi filter
+    all_folders = [folder] if folder else ([folders] if isinstance(folders, str) else (folders or []))
+    all_types = [file_type] if file_type else ([file_types] if isinstance(file_types, str) else (file_types or []))
+    all_docs = [doc_ids] if isinstance(doc_ids, str) else (doc_ids or [])
+
+    if all_folders:
+        placeholders = ",".join(["?"] * len(all_folders))
+        sql += f" AND d.folder IN ({placeholders})"
+        params.extend(all_folders)
+
+    if all_types:
+        clean_types = [t.lower() for t in all_types]
+        placeholders = ",".join(["?"] * len(clean_types))
+        sql += f" AND d.file_type IN ({placeholders})"
+        params.extend(clean_types)
+
+    if all_docs:
+        placeholders = ",".join(["?"] * len(all_docs))
+        sql += f" AND d.doc_id IN ({placeholders})"
+        params.extend(all_docs)
 
     sql += " ORDER BY score DESC LIMIT ?;"
     params.append(k)
@@ -411,8 +428,11 @@ class VectorIndex:
         k: int = 5,
         folder: Optional[str] = None,
         file_type: Optional[str] = None,
+        folders: Optional[Any] = None,
+        file_types: Optional[Any] = None,
+        doc_ids: Optional[Any] = None,
     ) -> list[tuple[int, float]]:
-        """Mencari top-k tetangga terdekat menggunakan dot product vektor ternormalisasi."""
+        """Mencari top-k tetangga terdekat menggunakan dot product vektor ternormalisasi dengan filter."""
         if self.is_empty() or self.matrix is None:
             return []
 
@@ -425,11 +445,20 @@ class VectorIndex:
         n_samples = len(self.rowids)
         mask = np.ones(n_samples, dtype=bool)
 
-        if folder is not None:
-            mask &= np.array([f == folder for f in self.folders], dtype=bool)
-        if file_type is not None:
-            ft_lower = file_type.lower()
-            mask &= np.array([ft == ft_lower for ft in self.file_types], dtype=bool)
+        # Normalisasi filter
+        all_folders = [folder] if folder else ([folders] if isinstance(folders, str) else (folders or []))
+        all_types = [file_type] if file_type else ([file_types] if isinstance(file_types, str) else (file_types or []))
+        all_docs = [doc_ids] if isinstance(doc_ids, str) else (doc_ids or [])
+
+        if all_folders:
+            f_set = set(all_folders)
+            mask &= np.array([f in f_set for f in self.folders], dtype=bool)
+        if all_types:
+            ft_set = {t.lower() for t in all_types}
+            mask &= np.array([ft in ft_set for ft in self.file_types], dtype=bool)
+        if all_docs:
+            d_set = set(all_docs)
+            mask &= np.array([did in d_set for did in self.doc_ids], dtype=bool)
 
         valid_indices = np.where(mask)[0]
         if len(valid_indices) == 0:
