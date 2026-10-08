@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     SAMPLE_DIR: Path = Path("data/sample")
     INDEX_DIR: Path = Path("data/index")
 
+    # API settings
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 8000
+    API_KEY: str = ""
+    WARMUP: bool = True
+    MAX_CONCURRENT_CHAT: int = 1
+    MAX_UPLOAD_MB: int = 50
+    UPLOAD_SUBDIR: str = "uploads"
+
     # Privacy & Logging
     ALLOW_REMOTE: bool = False
     LOG_CONTENT: bool = False
