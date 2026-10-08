@@ -211,6 +211,8 @@ def upload_document(
 
     # Validasi folder
     clean_folder = _sanitize_folder(folder)
+    if not clean_folder and settings.UPLOAD_SUBDIR:
+        clean_folder = settings.UPLOAD_SUBDIR.strip().strip("/\\")
 
     # Siapkan direktori tujuan
     target_dir = settings.DOCS_DIR / clean_folder if clean_folder else settings.DOCS_DIR

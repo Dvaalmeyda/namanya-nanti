@@ -12,7 +12,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api.deps import get_job_manager
 from app.api.routes import chat, documents, health, index, search
@@ -174,6 +174,11 @@ def create_app(settings: Settings = None) -> FastAPI:
     # ==========================================================================
     # Registrasi Router dengan Prefix /api/v1
     # ==========================================================================
+    @app.get("/", include_in_schema=False)
+    def root_redirect():
+        """Mengarahkan akses root peramban langsung ke Swagger UI."""
+        return RedirectResponse(url="/docs", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
     api_prefix = "/api/v1"
     app.include_router(health.router, prefix=api_prefix)
     app.include_router(chat.router, prefix=api_prefix)
