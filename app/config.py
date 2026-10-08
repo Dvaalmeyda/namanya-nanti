@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     VECTOR_DTYPE: str = "float32"
     STEMMER: str = "none"
 
+    # Retrieval & RAG settings
+    TOP_K: int = 4
+    CANDIDATES: int = 20
+    RRF_K: int = 60
+    MIN_DENSE_SCORE: float = 0.35
+    MIN_BM25_SCORE: float = 0.0
+    MAX_CONTEXT_CHARS: int = 4000
+    HISTORY_TURNS: int = 3
+    HISTORY_MAX_CHARS: int = 1500
+    QUERY_REWRITE: bool = False
+
     # Paths
     DOCS_DIR: Path = Path("data/docs")
     SAMPLE_DIR: Path = Path("data/sample")
