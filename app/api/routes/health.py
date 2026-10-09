@@ -1,12 +1,12 @@
 """Endpoint pemeriksaan kesehatan sistem dan status komponen (Health Check)."""
 
 import sqlite3
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_app_settings
-from app.api.schemas import HealthResponse
+from app.api.schemas import HealthResponse, SystemLogsResponse
 from app.config import Settings
 from app import ollama_client
 from app import store
@@ -75,3 +75,52 @@ def get_health(settings: Settings = Depends(get_app_settings)) -> HealthResponse
         index_version=index_version,
         config_summary=config_summary,
     )
+
+
+@router.get(
+    "/system/logs",
+    response_model=SystemLogsResponse,
+    summary="Mengambil baris log sistem backend",
+    description="Membaca log dari berkas app.log yang telah disanitasi oleh RedactionFilter. Mendukung filter baris, level, dan pencarian teks.",
+)
+def get_system_logs(
+    lines: int = Query(100, ge=1, le=1000, description="Jumlah baris terakhir yang diambil"),
+    level: Optional[str] = Query(None, description="Filter level log (DEBUG, INFO, WARNING, ERROR)"),
+    search: Optional[str] = Query(None, description="Pencarian kata kunci teks dalam log"),
+    settings: Settings = Depends(get_app_settings),
+) -> SystemLogsResponse:
+    """Mengembalikan baris log backend terfilter."""
+    log_file = settings.INDEX_DIR / "app.log"
+    if not log_file.exists():
+        return SystemLogsResponse(
+            log_file=str(log_file),
+            total_lines=0,
+            logs=[],
+        )
+
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = [line.rstrip("\r\n") for line in f if line.strip()]
+    except Exception:
+        all_lines = []
+
+    # Terapkan filter level jika ada
+    filtered = all_lines
+    if level:
+        lvl_tag = f"| {level.strip().upper()}"
+        filtered = [l for l in filtered if lvl_tag in l]
+
+    # Terapkan filter pencarian teks jika ada
+    if search:
+        search_lower = search.strip().lower()
+        filtered = [l for l in filtered if search_lower in l.lower()]
+
+    # Ambil baris terakhir sejumlah 'lines'
+    tail_lines = filtered[-lines:] if len(filtered) > lines else filtered
+
+    return SystemLogsResponse(
+        log_file=str(log_file),
+        total_lines=len(tail_lines),
+        logs=tail_lines,
+    )
+

@@ -398,3 +398,25 @@ class IndexStatusResponse(BaseModel):
             }
         }
     )
+
+
+class SystemLogsResponse(BaseModel):
+    """Hasil pembacaan log sistem backend."""
+
+    log_file: str = Field(..., description="Nama atau jalur berkas log")
+    total_lines: int = Field(..., description="Jumlah baris log yang dikembalikan")
+    logs: list[str] = Field(default_factory=list, description="Daftar baris teks log")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "log_file": "data/index/app.log",
+                "total_lines": 2,
+                "logs": [
+                    "2026-10-09 14:00:00 | INFO    | app.api.main | Server started",
+                    "2026-10-09 14:00:01 | INFO    | app.indexing | Indexing completed",
+                ],
+            }
+        }
+    )
+
