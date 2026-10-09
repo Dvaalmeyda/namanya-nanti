@@ -2,7 +2,7 @@
 
 Aplikasi tanya-jawab atas dokumen pribadi berbasis Retrieval-Augmented Generation (RAG). Pengguna mengunggah atau menempatkan dokumen (PDF, DOCX, XLSX, Markdown, TXT), sistem mengindeksnya, lalu menjawab pertanyaan berdasarkan isi dokumen beserta rujukan sumbernya. Seluruh komponen (model bahasa, model embedding, indeks, API) dijalankan di perangkat pengguna melalui Ollama dan FastAPI.
 
-Versi saat ini: **0.1.0** (lihat [CHANGELOG.md](CHANGELOG.md)).
+Versi saat ini: **0.2.0** (lihat [CHANGELOG.md](CHANGELOG.md)).
 
 > Data pada repositori ini adalah **data dummy**. Seluruh dokumen di `data/sample/` dan seluruh pertanyaan di `eval/golden.sample.jsonl` dibuat oleh skrip untuk keperluan pengembangan dan pengujian. Tidak ada dokumen pribadi nyata di dalam repositori.
 
@@ -25,14 +25,15 @@ Versi saat ini: **0.1.0** (lihat [CHANGELOG.md](CHANGELOG.md)).
 
 ## 1. Overview Sistem
 
-Sistem terdiri dari empat lapisan:
+Sistem terdiri dari lima lapisan:
 
 | Lapisan | Peran | Implementasi |
 |---|---|---|
 | Ingest | Membaca dokumen, memecah menjadi chunk, membuat embedding | `app/loaders.py`, `app/indexing.py` |
 | Penyimpanan | Menyimpan teks, metadata, vektor, dan indeks pencarian kata kunci | SQLite (tabel biasa + FTS5), `app/store.py` |
 | Retrieval dan RAG | Pencarian hybrid, penyaringan relevansi, penyusunan prompt, pemanggilan LLM, pengolahan sitasi | `app/retrieval.py`, `app/rag.py`, `app/prompts.py` |
-| Antarmuka | REST API dengan dokumentasi Swagger UI | FastAPI, `app/api/` |
+| Antarmuka API | REST API dengan dokumentasi Swagger UI dan ReDoc | FastAPI, `app/api/` |
+| Antarmuka Web | Antarmuka grafis modular untuk pengguna di peramban | Streamlit, `frontend/` |
 
 Alur permintaan tanya-jawab:
 
@@ -50,8 +51,10 @@ Penjelasan lebih rinci ada di [docs/architecture.md](docs/architecture.md).
 
 Fungsi utama: menjawab pertanyaan pengguna berdasarkan isi dokumen yang telah diindeks, disertai rujukan ke dokumen dan lokasi asalnya (halaman, bab, atau sheet).
 
-Fitur yang tersedia pada versi 0.1.0:
+Fitur yang tersedia pada versi 0.2.0:
 
+- **Antarmuka Web Streamlit Modular**: antarmuka pengguna interaktif yang terhubung murni melalui REST API (bebas akses basis data langsung), memuat chat RAG interaktif (streaming SSE dan non-streaming JSON), laboratorium retrieval, manajemen dokumen dan inspeksi chunk, serta pemantauan log server real-time.
+- **Transparansi Alur Kerja (Workflow Trace 8 Tahap)**: visualisasi langkah inferensi RAG per tanggapan (kueri, filter, embedding, hybrid search, relevance gate, penyusunan prompt, generasi LLM, sitasi).
 - **Format dokumen**: PDF (PyMuPDF), DOCX (python-docx), XLSX (openpyxl, dipecah per kelompok baris), Markdown, dan TXT. PDF hasil pemindaian terdeteksi dan ditandai membutuhkan OCR (OCR belum diimplementasikan).
 - **Pengindeksan inkremental**: perubahan dideteksi lewat hash berkas; dokumen yang tidak berubah tidak diproses ulang. Dokumen kembar (isi sama, path berbeda) berbagi embedding.
 - **Pencarian hybrid**: kombinasi pencarian vektor (dense) dan BM25 melalui Reciprocal Rank Fusion. Mode `dense` dan `bm25` juga dapat dipilih secara terpisah.
@@ -60,7 +63,7 @@ Fitur yang tersedia pada versi 0.1.0:
 - **Sitasi**: jawaban memuat penanda `[1]`, `[2]`, dan seterusnya yang dipetakan ke metadata sumber.
 - **Riwayat percakapan**: pertanyaan lanjutan memakai beberapa giliran terakhir dari riwayat yang dikirim klien. Server tidak menyimpan sesi.
 - **Perlindungan terhadap prompt injection**: teks dokumen diperlakukan sebagai data dan dibungkus dalam penanda khusus pada prompt.
-- **REST API**: endpoint untuk chat (JSON dan streaming SSE), pencarian, manajemen dokumen, pembaruan indeks di latar belakang, dan health check.
+- **REST API**: endpoint untuk chat (JSON dan streaming SSE), pencarian, manajemen dokumen, pembaruan indeks di latar belakang, diagnostik log sistem, dan health check.
 - **Autentikasi opsional**: header `X-API-Key` jika `API_KEY` diisi.
 - **Kontrol privasi**: koneksi ke host Ollama selain loopback ditolak kecuali `ALLOW_REMOTE=true`; isi dokumen dan pertanyaan tidak dicatat ke log kecuali `LOG_CONTENT=true`.
 - **Modul evaluasi**: golden set, metrik retrieval dan jawaban, sweep parameter, dan runner end-to-end (`eval/`).
@@ -143,6 +146,14 @@ Catatan metodologi, termasuk koreksi golden set dan keterbatasan pengukuran, ada
 │   ├── docs/                 Dokumen pengguna (diabaikan git)
 │   └── index/                Basis data indeks (diabaikan git)
 ├── eval/                     Golden set, metrik, sweep, runner, laporan
+├── frontend/                 Antarmuka web modular (Streamlit)
+│   ├── client/               Klien HTTP REST API (base, system, doc, search, chat)
+│   ├── components/           Komponen UI modular (header, sidebar, chat, sitasi, trace, log)
+│   ├── state/                Manajemen sesi Streamlit dan riwayat percakapan
+│   ├── utils/                Utilitas pemformat teks/angka dan parser SSE
+│   ├── views/                Tampilan tab (chat, search, documents, system)
+│   ├── app.py                Entrypoint antarmuka Streamlit
+│   └── config.py             Konfigurasi klien frontend
 ├── scripts/                  make_sample_docs, check_env, test_llm, demo
 ├── tests/                    Pengujian unit dan integrasi (pytest)
 ├── docs/                     Dokumentasi rinci
@@ -231,6 +242,20 @@ uv run python scripts/check_env.py --models qwen3:4b-instruct qwen2.5:1.5b
 
 Skrip ini memeriksa ketersediaan model serta mengukur kecepatan prefill dan generasi.
 
+### 6.8 Menjalankan Antarmuka Web (Streamlit)
+
+Setelah server API berjalan (langkah 6.6), buka terminal terpisah dan jalankan:
+
+```powershell
+uv run streamlit run frontend/app.py --server.port 8501 --server.address 127.0.0.1
+```
+
+Akses antarmuka grafis di peramban: `http://127.0.0.1:8501`. Antarmuka ini menyediakan:
+- Tab **Chat RAG**: Percakapan dokumen (mode streaming atau non-streaming), kartu sitasi interaktif per chunk, visualisasi 8 tahap workflow trace, ringkasan latensi, dan reset chat.
+- Tab **Retrieval Lab**: Pengujian pencarian komparatif (`hybrid`, `dense`, `bm25`) tanpa memanggil LLM beserta rincian skor.
+- Tab **Documents**: Pengunggahan berkas multi-format dengan progress bar sinkronisasi, penampil daftar dokumen terindeks, inspeksi chunk, dan aksi hapus dokumen.
+- Tab **System**: Status kesehatan backend & model Ollama, serta penampil log konsol real-time (`app.log`) dengan filter level.
+
 ## 7. Penggunaan API
 
 Semua endpoint berada di bawah prefiks `/api/v1`.
@@ -238,6 +263,7 @@ Semua endpoint berada di bawah prefiks `/api/v1`.
 | Method | Path | Fungsi |
 |---|---|---|
 | GET | `/health` | Status Ollama, model, jumlah dokumen, versi indeks |
+| GET | `/system/logs` | Mengambil baris log server terbaru dengan filter level |
 | POST | `/chat` | Tanya-jawab, respons JSON |
 | POST | `/chat/stream` | Tanya-jawab, respons streaming (SSE) |
 | POST | `/search` | Retrieval tanpa LLM (`hybrid`, `dense`, `bm25`) |
@@ -293,7 +319,7 @@ Pengujian otomatis:
 uv run pytest
 ```
 
-Saat ini terdapat 60 pengujian. `pytest-socket` memblokir koneksi keluar selama pengujian; hanya loopback yang diizinkan.
+Saat ini terdapat 68 pengujian. `pytest-socket` memblokir koneksi keluar selama pengujian; hanya loopback yang diizinkan.
 
 Evaluasi kualitas:
 
@@ -325,6 +351,7 @@ Ringkasan; rincian dan alasan ada di [docs/upgrade-recommendations.md](docs/upgr
 
 | Prioritas | Usulan |
 |---|---|
+| Selesai | Antarmuka web modular di atas API (diimplementasikan di v0.2.0 via Streamlit) |
 | Tinggi | Perluas golden set dan gunakan dokumen nyata melalui `eval/golden.private.jsonl` |
 | Tinggi | Tinjau nilai default ambang relevansi berdasarkan hasil sweep |
 | Tinggi | Catat TTFT dari metrik prefill Ollama pada runner evaluasi |
@@ -332,7 +359,6 @@ Ringkasan; rincian dan alasan ada di [docs/upgrade-recommendations.md](docs/upgr
 | Sedang | Uji model LLM lain dan model embedding alternatif pada koleksi yang lebih besar |
 | Sedang | Aktifkan query rewrite secara selektif untuk pertanyaan lanjutan |
 | Sedang | Tambahkan reranker pada hasil retrieval |
-| Rendah | Antarmuka web sederhana di atas API |
 | Rendah | Penyimpanan sesi percakapan di sisi server |
 | Rendah | Dukungan GPU atau perangkat dengan VRAM lebih besar untuk model yang lebih besar |
 

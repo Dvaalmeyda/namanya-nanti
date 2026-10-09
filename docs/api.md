@@ -49,6 +49,25 @@ Memeriksa status operasional server, konektivitas Ollama, daftar model yang terp
   }
   ```
 
+#### Pembacaan Log Sistem Backend (`GET /api/v1/system/logs`)
+Membaca baris-baris log terproteksi dari berkas `data/index/app.log` yang telah disanitasi oleh `RedactionFilter`.
+
+- **Parameter Query**:
+  - `lines` (`int`, default: 100): Jumlah baris terakhir yang diambil.
+  - `level` (`string`, opsional): Filter level log (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
+  - `search` (`string`, opsional): Pencarian kata kunci teks dalam log.
+- **Format Tanggapan (`200 OK`)**:
+  ```json
+  {
+    "log_file": "data/index/app.log",
+    "total_lines": 2,
+    "logs": [
+      "2026-10-09 14:00:00 | INFO    | app.api.main | Server started",
+      "2026-10-09 14:00:01 | INFO    | app.indexing | Indexing completed"
+    ]
+  }
+  ```
+
 ---
 
 ### 3.2 Tanya-Jawab Dokumen Non-Streaming (`POST /api/v1/chat`)

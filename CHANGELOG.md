@@ -4,6 +4,32 @@ Seluruh perubahan dan pembaruan versi pada proyek Personal Document Assistant di
 
 ---
 
+## [0.2.0] - 2026-10-09
+
+Pembaruan besar yang menambahkan antarmuka web pengguna modular berbasis Streamlit dan endpoint diagnostik log sistem.
+
+### Ditambahkan
+
+#### Fase 6: Frontend Aplikasi (Streamlit Modular)
+- Antarmuka web pengguna interaktif berbasis Streamlit di `frontend/app.py` yang berkomunikasi 100% melalui REST API tanpa akses langsung ke basis data atau Ollama.
+- Arsitektur antarmuka modular dengan pembatasan ketat di bawah 150-200 baris kode per berkas:
+  - `frontend/config.py`: Konfigurasi terpusat untuk alamat API, timeout, dan interval polling.
+  - `frontend/utils/formatters.py`: Utilitas pemformat angka, waktu latensi, ukuran berkas, kecepatan token, dan badge status visual.
+  - `frontend/utils/sse_parser.py`: Parser aliran Server-Sent Events (SSE) untuk streaming respons percakapan.
+  - `frontend/client/`: Klien HTTP terstruktur (`base.py`, `system_client.py`, `document_client.py`, `search_client.py`, `chat_client.py`) dengan penanganan galat terstandarisasi.
+  - `frontend/state/`: Pengelolaan sesi reaktif (`session.py`, `chat_state.py`) untuk riwayat percakapan dan jejak alur kerja per giliran.
+  - `frontend/components/`: Komponen visual modular (`header.py`, `sidebar.py`, `chat_bubble.py`, `citation_viewer.py`, `workflow_trace.py`, `metrics_display.py`, `file_uploader.py`, `system_logs.py`).
+  - `frontend/views/`: 4 tampilan utama berbasis tab (`chat_view.py`, `search_view.py`, `documents_view.py`, `system_view.py`).
+- Fitur Transparansi Alur Kerja (Workflow Trace 8 Tahap): visualisasi langkah inferensi RAG per giliran chat (penerimaan pertanyaan, pemfilteran metadata, embedding query, hybrid retrieval, relevance gate, perakitan prompt, generasi LLM, dan pemetaan sitasi).
+- Tampilan Chat RAG: Mendukung pilihan mode streaming SSE dan non-streaming JSON, kartu sitasi interaktif per rujukan chunk dokumen, ringkasan latensi, dan pembersih riwayat sesi.
+- Tampilan Laboratorium Retrieval: Fasilitas pengujian komparasi mode retrieval (`hybrid`, `dense`, `bm25`) tanpa pemanggilan LLM, visualisasi skor Reciprocal Rank Fusion, dan cuplikan teks chunk.
+- Tampilan Manajemen Dokumen: Daftar dokumen terindeks, inspeksi konten lengkap chunk, unggah berkas multi-format dengan pemantau progres indexing berkala, dan aksi penghapusan dokumen.
+- Tampilan Status Sistem: Pemantauan kesehatan server backend, verifikasi model Ollama yang termuat, dan penampil log server real-time (`app.log`) dengan filter level dan penyamaran konten otomatis (`[REDACTED]`).
+- Endpoint REST API baru pada backend: `GET /api/v1/system/logs` di `app/api/routes/health.py` dengan skema `SystemLogsResponse` untuk membaca baris log server terbaru secara aman.
+- Rangkaian pengujian unit baru di `tests/test_frontend.py` untuk validasi formatters, parser SSE, batasan baris kode per berkas, dan kepatuhan bebas emotikon, meningkatkan total pengujian menjadi 68 tes passing.
+
+---
+
 ## [0.1.0] - 2026-10-08
 
 Versi awal sistem yang mengimplementasikan seluruh fungsi dasar tanya-jawab dokumen pribadi berbasis Retrieval-Augmented Generation (RAG) secara lokal.
