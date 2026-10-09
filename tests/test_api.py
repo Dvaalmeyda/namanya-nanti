@@ -405,3 +405,38 @@ def test_startup_fails_on_remote_host_without_permission():
     with pytest.raises(ValueError, match="Akses ke host non-loopback"):
         with TestClient(app):
             pass
+
+
+def test_system_logs_endpoint(test_app):
+    """Memastikan endpoint GET /api/v1/system/logs membaca log dan mendukung filter."""
+    app, settings = test_app
+    client = TestClient(app)
+
+    # Tulis log dummy ke settings.INDEX_DIR / 'app.log'
+    log_file = settings.INDEX_DIR / "app.log"
+    log_file.write_text(
+        "2026-10-09 14:00:00 | INFO    | app.api.main | Server started\n"
+        "2026-10-09 14:00:01 | WARNING | app.loaders  | File warning\n"
+        "2026-10-09 14:00:02 | ERROR   | app.indexing | Index error\n",
+        encoding="utf-8",
+    )
+
+    # 1. Ambil semua log
+    resp = client.get("/api/v1/system/logs")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_lines"] == 3
+    assert len(data["logs"]) == 3
+
+    # 2. Filter level ERROR
+    resp_err = client.get("/api/v1/system/logs?level=ERROR")
+    assert resp_err.status_code == 200
+    assert resp_err.json()["total_lines"] == 1
+    assert "Index error" in resp_err.json()["logs"][0]
+
+    # 3. Filter search
+    resp_search = client.get("/api/v1/system/logs?search=warning")
+    assert resp_search.status_code == 200
+    assert resp_search.json()["total_lines"] == 1
+    assert "File warning" in resp_search.json()["logs"][0]
+
