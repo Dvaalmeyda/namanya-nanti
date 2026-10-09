@@ -114,7 +114,14 @@ Seluruh konfigurasi sistem dikelola secara terpusat melalui berkas `app/config.p
 
 ## 2. Cara Mengubah Pengaturan
 
-### Menggunakan berkas `.env`
+### Pada Lingkungan Docker (Direkomendasikan)
+Saat menggunakan Docker, konfigurasi dibaca dari berkas `.env.docker`. Anda dapat langsung mengubah parameter di dalam `.env.docker` (misalnya model atau port) sebelum atau sesudah menjalankan kontainer. Jika mengubah konfigurasi pada kontainer yang sedang berjalan, terapkan perubahan dengan:
+
+```bash
+docker compose up -d
+```
+
+### Menggunakan berkas `.env` (Setup Manual Host)
 Salin template berkas `.env.example` ke `.env`:
 
 ```powershell

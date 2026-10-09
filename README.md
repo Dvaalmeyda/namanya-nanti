@@ -168,18 +168,16 @@ Catatan metodologi, termasuk koreksi golden set dan keterbatasan pengukuran, ada
 
 ## 6. Setup dan Menjalankan Proyek
 
-### 6.1 Menjalankan dengan Docker (Metode Cepat / Zero Setup)
+Aplikasi ini telah dikemas menggunakan **Docker** sehingga Anda **tidak perlu menginstal Python, uv, Ollama, ataupun mengunduh model secara manual**. Seluruh proses build dan pengunduhan model awal berlangsung otomatis di dalam kontainer.
 
-Metode ini disarankan agar pengguna tidak perlu memasang Python, uv, atau mengonfigurasi Ollama dan model secara manual.
+### 6.1 Menjalankan dengan Docker (Direkomendasikan)
 
-#### Prasyarat Docker
+#### Prasyarat
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) terpasang dan dalam status berjalan.
 
-#### Opsi A: Full Docker (Satu Perintah / Satu Klik)
-Seluruh komponen (Ollama CPU, pengunduh model otomatis, backend FastAPI, dan frontend Streamlit) dijalankan di dalam jaringan kontainer privat:
-
-- **Pengguna Windows**:
-  Jalankan atau klik ganda berkas `scripts/docker-start.bat`.
+#### Menjalankan Aplikasi
+- **Pengguna Windows (1-Klik)**:
+  Klik ganda berkas `scripts/docker-start.bat`.
 - **Pengguna Linux / macOS**:
   ```bash
   chmod +x scripts/*.sh
@@ -190,114 +188,57 @@ Seluruh komponen (Ollama CPU, pengunduh model otomatis, backend FastAPI, dan fro
   docker compose up -d
   ```
 
-Pada inisialisasi awal, kontainer `model-puller` akan otomatis mengunduh model `bge-m3` dan `qwen3:4b-instruct` ke volume persisten (`pda_ollama_models`). Setelah siap, akses:
+Pada saat pertama kali dijalankan, model AI (`bge-m3` dan `qwen3:4b-instruct`) akan otomatis diunduh ke volume persisten Docker (`pda_ollama_models`). Setelah selesai, sistem langsung dapat diakses:
 - **Antarmuka Web Streamlit**: http://localhost:8501
 - **Dokumentasi API Swagger**: http://localhost:8000/docs
 
-Untuk menghentikan layanan:
-- Windows: `scripts/docker-stop.bat`
-- Terminal: `docker compose down`
+Dokumen yang ingin diindeks dapat diunggah langsung melalui antarmuka web (tab Documents) atau diletakkan di direktori `./data/docs/`.
 
-#### Opsi B: Mode Host Ollama (Memanfaatkan Model Host)
-Jika Anda sudah menginstal Ollama di komputer host dan tidak ingin mengunduh ulang model:
+#### Menghentikan Aplikasi
+- **Windows**: Jalankan `scripts/docker-stop.bat`.
+- **Terminal**: `docker compose down`.
+
+#### Opsi: Menggunakan Ollama Host yang Sudah Ada
+Jika Anda sudah memiliki instalasi Ollama lokal di komputer dan ingin menggunakan model yang sudah terunduh:
 ```bash
 docker compose -f docker-compose.host-ollama.yml up -d
 ```
 
 ---
 
-### 6.2 Setup Manual (Lokal Tanpa Docker)
+### 6.2 Setup Manual Tanpa Docker (Khusus Pengembangan)
 
-#### 6.2.1 Prasyarat Manual
+<details>
+<summary>Klik di sini untuk panduan setup manual (Python, uv, Ollama host)</summary>
 
-1. Python 3.11 atau lebih baru.
-2. [uv](https://docs.astral.sh/uv/):
+Bagi kontributor atau pengembang yang ingin memodifikasi dan menguji kode langsung di host tanpa kontainer:
+
+1. **Prasyarat**: Python 3.11+, [uv](https://docs.astral.sh/uv/), dan [Ollama](https://ollama.com/) (aktif di `http://127.0.0.1:11434`).
+2. **Instalasi Dependensi & Unduh Model**:
    ```powershell
-   winget install astral-sh.uv
+   uv sync
+   Copy-Item .env.example .env
+   ollama pull bge-m3
+   ollama pull qwen3:4b-instruct
    ```
-3. [Ollama](https://ollama.com/) terpasang dan berjalan di `http://127.0.0.1:11434`.
-4. Ruang disk sekitar 4 GB untuk model dan RAM minimal 16 GB disarankan.
+3. **Dokumen Contoh (Opsional)**:
+   ```powershell
+   uv run python scripts/make_sample_docs.py
+   ```
+4. **Menjalankan Backend (Terminal 1)**:
+   ```powershell
+   uv run uvicorn app.api.main:app --host 127.0.0.1 --port 8000 --workers 1
+   ```
+5. **Menjalankan Frontend (Terminal 2)**:
+   ```powershell
+   uv run streamlit run frontend/app.py --server.port 8501 --server.address 127.0.0.1
+   ```
+6. **Pemeriksaan Lingkungan**:
+   ```powershell
+   uv run python scripts/check_env.py
+   ```
 
-### 6.2.2 Konfigurasi Ollama untuk mode CPU
-
-Langkah ini hanya diperlukan jika inferensi GPU gagal atau tidak diinginkan, seperti pada perangkat pengembangan. Atur variabel lingkungan satu kali, lalu restart Ollama:
-
-```powershell
-[Environment]::SetEnvironmentVariable("OLLAMA_VULKAN", "0", "User")
-[Environment]::SetEnvironmentVariable("CUDA_VISIBLE_DEVICES", "-1", "User")
-[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL", "1", "User")
-[Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "2", "User")
-```
-
-Alternatif untuk satu sesi terminal:
-
-```powershell
-$env:OLLAMA_VULKAN = "0"
-$env:CUDA_VISIBLE_DEVICES = "-1"
-$env:OLLAMA_NUM_PARALLEL = "1"
-$env:OLLAMA_MAX_LOADED_MODELS = "2"
-ollama serve
-```
-
-### 6.2.3 Instalasi
-
-```powershell
-uv sync
-Copy-Item .env.example .env
-ollama pull bge-m3
-ollama pull qwen3:4b-instruct
-```
-
-Model pembanding (opsional): `ollama pull qwen2.5:1.5b`.
-
-### 6.2.4 Menyiapkan dokumen
-
-Dokumen dummy:
-
-```powershell
-uv run python scripts/make_sample_docs.py
-```
-
-Perintah ini membuat enam berkas di `data/sample/`. Untuk dokumen sendiri, letakkan berkas di `data/docs/` (dapat berupa subfolder) atau unggah lewat API.
-
-### 6.2.5 Membangun indeks
-
-Indeks dapat dibangun lewat API (`POST /api/v1/index/update`) setelah server berjalan, atau saat dokumen diunggah. Status dipantau melalui `GET /api/v1/index/status`.
-
-### 6.2.6 Menjalankan API
-
-```powershell
-uv run uvicorn app.api.main:app --host 127.0.0.1 --port 8000 --workers 1
-```
-
-Gunakan satu worker karena status indexing dan antrean chat disimpan di memori proses. Jika port 8000 sudah digunakan oleh aplikasi lain di sistem Anda, gunakan port alternatif (misal `--port 8001`), dan set variabel `API_PORT=8001` atau `PDA_API_URL=http://127.0.0.1:8001/api/v1` saat menjalankan Streamlit.
-
-- Swagger UI: http://127.0.0.1:8000/docs
-- ReDoc: http://127.0.0.1:8000/redoc
-
-### 6.2.7 Memeriksa lingkungan
-
-```powershell
-uv run python scripts/check_env.py
-uv run python scripts/check_env.py --num-thread 4 8
-uv run python scripts/check_env.py --models qwen3:4b-instruct qwen2.5:1.5b
-```
-
-Skrip ini memeriksa ketersediaan model serta mengukur kecepatan prefill dan generasi.
-
-### 6.2.8 Menjalankan Antarmuka Web (Streamlit)
-
-Setelah server API berjalan (langkah 6.6), buka terminal terpisah dan jalankan:
-
-```powershell
-uv run streamlit run frontend/app.py --server.port 8501 --server.address 127.0.0.1
-```
-
-Akses antarmuka grafis di peramban: `http://127.0.0.1:8501`. Antarmuka ini menyediakan:
-- Tab **Chat RAG**: Percakapan dokumen (mode streaming atau non-streaming), kartu sitasi interaktif per chunk, visualisasi 8 tahap workflow trace, ringkasan latensi, dan reset chat.
-- Tab **Retrieval Lab**: Pengujian pencarian komparatif (`hybrid`, `dense`, `bm25`) tanpa memanggil LLM beserta rincian skor.
-- Tab **Documents**: Pengunggahan berkas multi-format dengan progress bar sinkronisasi, penampil daftar dokumen terindeks, inspeksi chunk, dan aksi hapus dokumen.
-- Tab **System**: Status kesehatan backend & model Ollama, serta penampil log konsol real-time (`app.log`) dengan filter level.
+</details>
 
 ## 7. Penggunaan API
 
