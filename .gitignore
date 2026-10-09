@@ -33,6 +33,7 @@ MANIFEST
 .env
 .env.*
 !.env.example
+!.env.docker
 *.local
 
 # IDE & Editors
@@ -62,8 +63,10 @@ eval/reports/
 eval/*.private.*
 
 # External Documentation & Helper Scripts
-external/
-scripts/
+external/*
+!external/plan/
+scripts/*
+!scripts/docker*
 script/
 
 # Operating System Files
