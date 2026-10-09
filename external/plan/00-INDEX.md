@@ -18,12 +18,14 @@ Kumpulan prompt untuk AI coding agent (di IDE), satu fase per file. Konteks bers
 | 4 | fase-4-api.md | FastAPI + Swagger: chat (JSON dan SSE), search, dokumen (upload/hapus), indexing background, hardening ringan | 3 |
 | 5 | fase-5-evaluasi.md | Golden set, metrik kualitas + latensi, sweep dua tahap (retrieval lalu LLM), pemilihan konfigurasi final | 4 |
 | 6 | fase-6-frontend-streamlit.md | Frontend Streamlit modular: chat RAG streaming, visualisasi alur kerja/trace log, manajemen dokumen | 4 |
+| 7 | fase-7-docker.md | Kontainerisasi Docker & Compose: multi-stage build, auto model pull, zero-setup launcher 1-klik | 4, 6 |
 
 API dibangun sebelum evaluasi agar sistem bisa dicoba lewat Swagger sedini mungkin. Evaluasi memakai modul yang sama (bukan lewat HTTP), jadi urutan ini tidak mengubah hasil.
 
 ## Keputusan teknis
 | Komponen | Pilihan | Alasan singkat |
 |---|---|---|
+| Kontainer | Docker & Docker Compose | Menghapus hambatan setup lokal yang panjang menjadi 1 perintah / skrip launcher |
 | LLM | Ollama, baseline `qwen3:4b-instruct` (`think=False`) | Muat di RAM 16 GB, non-thinking lebih cepat. Kandidat lain (`qwen3.5:4b`, `gemma4:e4b`, `qwen3.5:2b`, `gemma4:e2b`) dibandingkan di Fase 5 |
 | Embedding | Ollama, baseline `bge-m3` | Multibahasa, kuat untuk bahasa Indonesia. Dibandingkan dengan `qwen3-embedding:0.6b`, `embeddinggemma`, `embeddinggemma-2` di Fase 5 |
 | Penyimpanan | Satu SQLite (WAL): metadata + teks + FTS5 + embedding BLOB | Satu transaksi atomik, tanpa lock antarproses, tanpa dependensi tambahan |
