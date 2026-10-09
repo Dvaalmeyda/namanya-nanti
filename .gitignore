@@ -31,7 +31,8 @@ MANIFEST
 
 # Environments & Secrets
 .env
-.env.local
+.env.*
+!.env.example
 *.local
 
 # IDE & Editors
@@ -48,6 +49,9 @@ htmlcov/
 # Logs
 *.log
 
+# Streamlit
+.streamlit/secrets.toml
+
 # Project Specific Data & Indexes
 data/docs/
 data/index/
@@ -57,7 +61,13 @@ data/private/
 eval/reports/
 eval/*.private.*
 
-# Environment overrides
-.env
-.env.*
-!.env.example
+# External Documentation & Helper Scripts
+external/
+scripts/
+script/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
