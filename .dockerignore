@@ -1,0 +1,32 @@
+# Virtual environment & runtime
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git & IDE
+.git/
+.gitignore
+.agents/
+.gemini/
+.idea/
+.vscode/
+
+# Testing, evaluasi, dan cache
+.pytest_cache/
+tests/
+eval/reports/
+eval/*.private.*
+*.log
+
+# Data spesifik host (dimount via bind mount)
+data/docs/*
+!data/docs/.gitkeep
+data/index/*
+!data/index/.gitkeep
+
+# Environment lokal spesifik host
+.env
