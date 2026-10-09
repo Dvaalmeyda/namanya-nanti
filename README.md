@@ -227,7 +227,7 @@ Indeks dapat dibangun lewat API (`POST /api/v1/index/update`) setelah server ber
 uv run uvicorn app.api.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Gunakan satu worker karena status indexing dan antrean chat disimpan di memori proses.
+Gunakan satu worker karena status indexing dan antrean chat disimpan di memori proses. Jika port 8000 sudah digunakan oleh aplikasi lain di sistem Anda, gunakan port alternatif (misal `--port 8001`), dan set variabel `API_PORT=8001` atau `PDA_API_URL=http://127.0.0.1:8001/api/v1` saat menjalankan Streamlit.
 
 - Swagger UI: http://127.0.0.1:8000/docs
 - ReDoc: http://127.0.0.1:8000/redoc

@@ -1,5 +1,13 @@
 """Entrypoint utama aplikasi Streamlit untuk Personal Document Assistant."""
 
+import sys
+from pathlib import Path
+
+# Pastikan direktori root proyek terdaftar di sys.path saat dijalankan via streamlit run
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import streamlit as st
 
 from frontend.client.document_client import DocumentClient
