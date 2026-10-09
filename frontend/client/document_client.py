@@ -7,12 +7,14 @@ from frontend.client.base import BaseApiClient
 class DocumentClient(BaseApiClient):
     """Klien untuk endpoint pengelolaan dokumen dan potongan teks."""
 
-    def get_documents(self, folder: Optional[str] = None) -> list[dict[str, Any]]:
+    def get_documents(
+        self, folder: Optional[str] = None, timeout: float = 5.0
+    ) -> list[dict[str, Any]]:
         """Mengambil daftar seluruh dokumen yang telah terindeks."""
         params: dict[str, Any] = {}
         if folder:
             params["folder"] = folder
-        res = self.request("GET", "/documents", params=params)
+        res = self.request("GET", "/documents", params=params, timeout=timeout)
         return res.get("documents", [])
 
     def get_document(self, doc_id: str) -> dict[str, Any]:

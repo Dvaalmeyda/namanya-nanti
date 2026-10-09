@@ -2,6 +2,9 @@
 
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -10,7 +13,7 @@ class FrontendConfig:
 
     backend_api_url: str = os.getenv(
         "PDA_API_URL",
-        f"http://127.0.0.1:{os.getenv('API_PORT', '8000')}/api/v1",
+        f"http://127.0.0.1:{os.getenv('API_PORT', '8001')}/api/v1",
     )
     api_key: str = os.getenv("PDA_API_KEY", os.getenv("API_KEY", ""))
     timeout_seconds: float = float(os.getenv("PDA_TIMEOUT", "300.0"))

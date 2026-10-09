@@ -7,9 +7,9 @@ from frontend.client.base import BaseApiClient
 class SystemClient(BaseApiClient):
     """Klien untuk endpoint status sistem, sinkronisasi indeks, dan log."""
 
-    def get_health(self) -> dict[str, Any]:
+    def get_health(self, timeout: float = 5.0) -> dict[str, Any]:
         """Memeriksa status operasional sistem, Ollama, dan indeks."""
-        return self.request("GET", "/health")
+        return self.request("GET", "/health", timeout=timeout)
 
     def get_index_status(self) -> dict[str, Any]:
         """Mengambil kemajuan dan status pekerjaan sinkronisasi indeks saat ini."""

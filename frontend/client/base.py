@@ -38,13 +38,15 @@ class BaseApiClient:
         json_data: Optional[dict[str, Any]] = None,
         files: Optional[dict[str, Any]] = None,
         data: Optional[dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> dict[str, Any]:
         """Menjalankan permintaan HTTP sinkron dengan penanganan galat terstruktur."""
         url = f"{self.base_url}{path}"
         headers = self._get_headers()
+        req_timeout = timeout if timeout is not None else self.timeout
 
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            with httpx.Client(timeout=httpx.Timeout(req_timeout, connect=5.0)) as client:
                 resp = client.request(
                     method=method,
                     url=url,
